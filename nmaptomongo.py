@@ -249,8 +249,6 @@ if __name__ == '__main__':
 
     print_banner()
 
-
-
     reports = []
     if args.file:
         reports.append(args.file)
