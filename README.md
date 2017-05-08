@@ -47,3 +47,14 @@ optional arguments:
 ### Result
 
 ![Alt text](doc/nmaptomongo_result.png)
+
+
+### Requirements
+
+Python libs required:
+* [pymongo](https://github.com/mongodb/mongo-python-driver)
+
+Install:
+```sh
+python3 -m pip install pymongo
+```
