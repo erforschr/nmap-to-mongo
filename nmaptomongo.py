@@ -95,11 +95,19 @@ def parse_scans(nmap_xml_report, db):
         nmaprun = nmap_xml_report.getElementsByTagName("nmaprun")[0]
         args = nmaprun.getAttribute("args")
 
+        starttimestamp = ""
+        starttime = ""
+        
         try:
             starttimestamp = nmaprun.getAttribute("start")
             starttime = nmaprun.getAttribute("startstr")
         except:
             pass
+
+        type = ""
+        protocol = ""
+        numservices = ""
+        services = ""
 
         try:
             scaninfo = nmaprun.getElementsByTagName("scaninfo")[0]
@@ -110,6 +118,9 @@ def parse_scans(nmap_xml_report, db):
 
         except:
             pass
+
+        endtime = ""
+        endtimestamp = ""
 
         try:
             runstats = nmaprun.getElementsByTagName("runstats")[0]
@@ -138,8 +149,9 @@ def parse_scans(nmap_xml_report, db):
 
 def parse_servers(nmap_xml_report, db):
     for host in nmap_xml_report.getElementsByTagName("host"):
-        server = []
-
+        ip = ""
+        protocol = ""
+        
         try:
             address = host.getElementsByTagName("address")[0]
             ip = address.getAttribute("addr")
@@ -147,12 +159,17 @@ def parse_servers(nmap_xml_report, db):
         except:
             continue
 
+        hostname = ""
+        
         try:
             hname = host.getElementsByTagName("hostname")[0]
             hostname = hname.getAttribute("name")
         except:
             pass
 
+        status = ""
+        server_state = ""
+        
         try:
             status = host.getElementsByTagName("status")[0]
             server_state = status.getAttribute("state")
@@ -164,6 +181,8 @@ def parse_servers(nmap_xml_report, db):
         ports_closed = 0
 
         for port in host.getElementsByTagName("port"):
+            portid = ""
+            
             try:
                 portid = port.getAttribute("portid")
             except:
@@ -197,6 +216,8 @@ def parse_servers(nmap_xml_report, db):
 
 def parse_services(nmap_xml_report, db):
     for host in nmap_xml_report.getElementsByTagName("host"):
+        ip = ""
+        
         try:
             address = host.getElementsByTagName("address")[0]
             ip = address.getAttribute("addr")
@@ -204,17 +225,29 @@ def parse_services(nmap_xml_report, db):
             continue
 
         for port in host.getElementsByTagName("port"):
+            protocol = ""
+
             try:
                 portid = int(port.getAttribute("portid"))
                 protocol = port.getAttribute("protocol")
             except:
                 continue
 
+            port_state = ""
+
             try:
                 state = port.getElementsByTagName("state")[0]
                 port_state = state.getAttribute("state")
             except:
                 pass
+
+            name = ""
+            ostype = ""
+            hostname = ""
+            product = ""
+            version = ""
+            tunnel = ""
+            extrainfo = ""
 
             try:
                 service = port.getElementsByTagName("service")[0]
@@ -265,15 +298,27 @@ if __name__ == '__main__':
 
     db = mongodb_connect(args.host, args.port, args.database)
 
+    parsing_error_files = []
+
     print('File(s) parsed:')
 
     for report in reports:
-        nmap_xml_report = xml.dom.minidom.parse(report)
+        
+        try:
+            nmap_xml_report = xml.dom.minidom.parse(report)
 
-        parse_scans(nmap_xml_report, db)
-        parse_servers(nmap_xml_report, db)
-        parse_services(nmap_xml_report, db)
+            parse_scans(nmap_xml_report, db)
+            parse_servers(nmap_xml_report, db)
+            parse_services(nmap_xml_report, db)
 
-        print(' - {}'.format(report))
+            print(' - {}'.format(report))
+            
+        except:
+            parsing_error_files.append(report)
+        
+    if len(parsing_error_files) != 0:
+        print('\nUnable to parse file(s):')
+        for report in parsing_error_files:
+            print(' - {}'.format(report))
 
-    print('\nParsed to database \"{}\"\n'.format(args.database))
+    print('\nNmap scans imported to database \"{}\"\n'.format(args.database))
