@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+	#!/usr/bin/env python3
 # -*- coding: utf8 -*-
 
 import os
@@ -15,7 +15,7 @@ https://github.com/argp/nmapdb/blob/master/nmapdb.py
 def print_banner():
     banner = '-------------------\n' \
              '~ Nmap to MongoDB ~\n' \
-             '-------------------\n'
+             '-------------------'
 
     print(banner)
 
@@ -47,9 +47,7 @@ def mongodb_connect(host, port, database):
         return db
 
     except Exception as e:
-        print('Cannot to connect to MongoDB')
         print(e)
-
         exit(1)
 
 
@@ -60,9 +58,7 @@ def mongodb_dropdatabase(host, port, database):
         client.drop_database(database)
 
     except Exception as e:
-        print('Cannot to connect to MongoDB')
         print(e)
-
         exit(1)
 
 
@@ -75,23 +71,25 @@ def is_nmap_report(file):
     return False
 
 
-def add_scan(db, scan):
-    collection = db['Scans']
-    collection.insert_one(scan)
+def is_nmap_report_tree_close_tag_exist(file):
+    close_tag = '</nmaprun>'
+    with open(file) as f:
+        if close_tag in f.readlines()[-1]:
+            return True
+    return False
 
 
-def add_server(db, server):
-    collection = db['Servers']
-    collection.insert_one(server)
-
-
-def add_service(db, service):
-    collection = db['Services']
-    collection.insert_one(service)
+def add_nmap_report_tree_close_tag(file):
+    close_tag = '</nmaprun>'
+    with open(file, 'a') as f:
+        f.write(close_tag)
 
 
 def parse_scans(nmap_xml_report, db):
+    collection = db['Scans']
+
     try:
+        # parsing
         nmaprun = nmap_xml_report.getElementsByTagName("nmaprun")[0]
         args = nmaprun.getAttribute("args")
 
@@ -142,13 +140,17 @@ def parse_scans(nmap_xml_report, db):
             'services': services,
         }
 
-        add_scan(db, scan)
+        # mongodb upsert
+        collection.update_one({'command': scan['command'], 'starttimestamp': scan['starttimestamp'], 'endtimestamp': scan['endtimestamp']}, {'$set': scan}, upsert=True)
     except:
         pass
 
 
 def parse_servers(nmap_xml_report, db):
+    collection = db['Servers']
+
     for host in nmap_xml_report.getElementsByTagName("host"):
+        # parsing
         ip = ""
         protocol = ""
         
@@ -211,11 +213,15 @@ def parse_servers(nmap_xml_report, db):
             'ports_closed': ports_closed,
         }
 
-        add_server(db, server)
+        # mongodb upsert
+        collection.update_one({'ip': server['ip']}, {'$set': server}, upsert=True)
 
 
 def parse_services(nmap_xml_report, db):
+    collection = db['Services']
+
     for host in nmap_xml_report.getElementsByTagName("host"):
+        # parsing
         ip = ""
         
         try:
@@ -274,7 +280,8 @@ def parse_services(nmap_xml_report, db):
                 'extrainfo': extrainfo,
             }
 
-            add_service(db, service)
+            # mongodb upsert
+            collection.update_one({'ip': service['ip'], 'port': service['port']}, {'$set': service}, upsert=True)
 
 
 if __name__ == '__main__':
@@ -282,31 +289,55 @@ if __name__ == '__main__':
 
     print_banner()
 
+    # get reports
     reports = []
     if args.file:
         reports.append(args.file)
+
     elif args.folder:
         for file in os.listdir(args.folder):
-            if is_nmap_report(os.path.join(args.folder, file)):
-                reports.append(os.path.join(args.folder, file))
+            if os.path.isfile(os.path.join(args.folder, file)):
+                if is_nmap_report(os.path.join(args.folder, file)):
+                    reports.append(os.path.join(args.folder, file))
 
+    # drop database if requested
     if args.drop:
-        ans = input('Drop database \"{}\" [y/N]: '.format(args.database))
+        ans = input('\nDrop database \"{}\" [y/N]: '.format(args.database))
         if ans.lower() == 'y':
             mongodb_dropdatabase(args.host, args.port, args.database)
-            print('Database \"{}\" dropped\n'.format(args.database))
+            print('Database \"{}\" dropped'.format(args.database))
 
     db = mongodb_connect(args.host, args.port, args.database)
 
+    # check if the nmap xml reports close tag are present
+    reports_tree_not_closed = []
+    for report in reports:
+        if not is_nmap_report_tree_close_tag_exist(report):
+            reports_tree_not_closed.append(report)
+
+    if len(reports_tree_not_closed) != 0:
+        print('\nXML nmap report not properly closed for report(s):')
+        for report in reports_tree_not_closed:
+            print(' - {}'.format(report))
+
+        ans = input('\nDo you want to close the XML tree of those reports [y/N]: '.format(args.database))
+        if ans.lower() == 'y':
+            for report in reports_tree_not_closed:
+                add_nmap_report_tree_close_tag(report)
+
+    # parse reports
     parsing_error_files = []
 
-    print('File(s) parsed:')
+    print('\nFile(s) parsed:')
 
     for report in reports:
         
         try:
             nmap_xml_report = xml.dom.minidom.parse(report)
+        except Exception as e:
+            print(e)
 
+        try:
             parse_scans(nmap_xml_report, db)
             parse_servers(nmap_xml_report, db)
             parse_services(nmap_xml_report, db)
@@ -321,4 +352,4 @@ if __name__ == '__main__':
         for report in parsing_error_files:
             print(' - {}'.format(report))
 
-    print('\nNmap scans imported to database \"{}\"\n'.format(args.database))
+    print()
